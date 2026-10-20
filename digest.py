@@ -18,10 +18,11 @@ def escape(text):
 
 def write_digest(db, output):
     rows = db.execute("""
-        SELECT items.*, item_topics.topic FROM items
+        SELECT items.*, sources.id AS source, item_topics.topic FROM items
+        JOIN sources ON sources.id = items.source_id
         JOIN item_topics ON items.id = item_topics.item_id
         WHERE digested_at IS NULL
-        ORDER BY topic, COALESCE(published, '') DESC, id
+        ORDER BY topic, published DESC NULLS LAST, items.id
     """).fetchall()
     grouped = defaultdict(list)
     ids = set()
@@ -46,18 +47,18 @@ def write_digest(db, output):
     temporary = output.with_suffix(output.suffix + ".tmp")
     temporary.write_text("\n".join(lines), encoding="utf-8")
     temporary.replace(output)
-    with db:
-        db.executemany("UPDATE items SET digested_at = ? WHERE id = ?",
-                       [(now, item_id) for item_id in ids])
+    with db.transaction():
+        with db.cursor() as cursor:
+            cursor.executemany("UPDATE items SET digested_at = %s WHERE id = %s",
+                               [(now, item_id) for item_id in ids])
     return len(ids), len(grouped)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--db", type=Path, default=ROOT / "monitor.sqlite3")
     parser.add_argument("--output", type=Path, default=ROOT / "digest.md")
     args = parser.parse_args()
-    db = connect(args.db)
+    db = connect()
     try:
         items, topics = write_digest(db, args.output)
     finally:
