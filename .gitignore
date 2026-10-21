@@ -3,4 +3,6 @@ __pycache__/
 .pytest_cache/
 *.sqlite3*
 digest.md
-codex.log
+.env
+.env.*
+codex*.log

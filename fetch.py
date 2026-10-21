@@ -8,7 +8,7 @@ import httpx
 import yaml
 
 from parsers import PARSERS
-from storage import connect, save, throttle
+from storage import connect, register_source, save, throttle
 from tagger import tag
 
 ROOT = Path(__file__).resolve().parent
@@ -65,7 +65,6 @@ def robots_policy(client, db, url, minimum_delay):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=ROOT / "sources.yaml")
-    parser.add_argument("--db", type=Path, default=ROOT / "monitor.sqlite3")
     args = parser.parse_args()
     config = yaml.safe_load(args.config.read_text())
     sources = config["sources"]
@@ -77,13 +76,14 @@ def main():
             raise ValueError(f"Unverified source configuration: {source['id']}")
     counts = dict(sources=5, fetched=0, parsed=0, items=0, inserted=0,
                   duplicates=0, tagged_new=0, todo=0, errors=0)
-    db = connect(args.db)
+    db = connect()
     timeout = httpx.Timeout(float(config["timeout_seconds"]), connect=10)
     try:
         with httpx.Client(headers={"User-Agent": config["user_agent"]},
                           timeout=timeout, follow_redirects=False) as client:
             for source in sources:
                 name, url = source["id"], source["url"]
+                register_source(db, name, url)
                 try:
                     delay = max(float(source["crawl_delay"]), VERIFIED[name][1])
                     robots, delay = robots_policy(client, db, url, delay)
